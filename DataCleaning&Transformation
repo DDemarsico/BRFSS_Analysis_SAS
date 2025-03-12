@@ -1,0 +1,1081 @@
+*****************************************************************************************
+*************   P   R   O   J   E  C  T   #   3       B   R   F   S   S   ***************
+*****************************************************************************************
+*                                                                                       *
+*   PROGRAM:    SAS Programs.sas                                                        *
+*   PURPOSE:    Create Combined Data Analysis Dataset                                   *
+*   AUTHOR:     Dominick DeMarsico                                                      *
+*   CREATED:    10-31-2024                                                              *
+*                                                                                       *
+*   COURSE:     BIOS 6680 - Data Management Using SAS                                   *
+*   DATA USED:  BRFSS Study_Fall2024 + Associated files                                 *
+*   SOFTWARE:   SAS Studio                                                              *
+*   MODIFIED:   DATE        BY  REASON                                                  *
+*               ----------  --- ------------------------------------------------------- *
+*               N/A  		N/A                                                         *
+*                                                                                       *
+*   CONTENTS:                                                                           *
+*   	Section 1.1.1 - Reference Table                                                 *
+*   	Section 1.1.2 - Demographics                                                    *
+*   	Section 1.1.3 - Outcomes                                                        *
+*   	Section 1.1.4 - Risk factos                                                     *
+*   	Section 1.1.5 - Dataset Merging                                                 *
+*                                                                                       *
+*****************************************************************************************
+***********************************************************************************; RUN;
+
+
+
+
+*****************************************************************************************
+******************** S   E   C   T   I   O   N   1.1.1 **********************************
+*****************************************************************************************;
+
+%Let CourseRoot = /home/u63987727/BRFSS;
+LIBNAME BRFSSscr "&CourseRoot/1_Source";
+LIBNAME BRFSSImp "&CourseRoot/2_Import";
+
+ * Given our goal of creating a finalized dataset for our analysis of the BRFSS data, it is prudent to make
+   sure that the reference table is properly imported for use. Our reference table is what we will be using for 
+   to merge all subsequent datasets. So let's begin there;
+ 
+ 
+ * The reference table is currently in the wide format (i.e. the individual observations are set as columns
+   rather than rows). We will first need to transpose this dataframe to make it better suited for our purposes;
+   
+   
+PROC Transpose Data = "/home/u63987727/BRFSS/1_Source/ref_table.sas7bdat"
+	OUT = BRFSSImp.ref_table_T;
+	VAR COL1  -- COL29803;
+	RUN;
+*Now we'll restructure the data to be in the same order as the data	map and drop unneccesary columns;
+
+	DATA BRFSSImp.ref_table;
+		ATTRIB		iday length=$2
+				    imonth length =$2
+				    iyear length = $4
+				    dispcode length = $4
+				    seqno length = $10
+				    id length = $13
+				    state length = $2 ;
+	SET BRFSSImp.ref_table_T;
+	DROP _Name_;
+	Run;
+	
+* Delete unneccesary unedited transposed file;
+
+PROC DELETE
+DATA = BRFSSImp.ref_table_T;
+Run;
+
+* The PI was only interested in responders from: California, Colorado, Connecticut, Delaware, New Mexico, 
+  North Carolina, and West Virginia. Let's use the state variable to remove all individuals who are not from
+  those 7 states;
+  
+DATA BRFSSImp.Data;
+    SET BRFSSImp.ref_table;
+    IF state IN (6, 8, 9, 10, 35, 37, 54);
+RUN;
+
+*Now we want to check if our data is in the correct format;
+
+PROC CONTENTS DATA=BRFSSImp.Data;
+RUN;
+
+*It looks like some of our important variables are strings. Let's change them to numerics;
+
+DATA BRFSSImp.Data;
+    SET BRFSSImp.Data;
+    /* Convert age_char from character to numeric */
+    state_num = INPUT(state, 8.);  /* 8. is the width format */
+    DROP state;                  /* Optionally drop the original character variable */
+    RENAME state_num = state;      /* Rename the numeric variable to the original name */
+RUN;
+
+*Now let's do the same for month and dispcode;
+
+DATA BRFSSImp.Data;
+    SET BRFSSImp.Data;
+    /* Convert age_char from character to numeric */
+    imonth_num = INPUT(imonth, 8.);  /* 8. is the width format */
+    DROP imonth;                  /* Optionally drop the original character variable */
+    RENAME imonth_num = imonth;      /* Rename the numeric variable to the original name */
+RUN;
+
+DATA BRFSSImp.Data;
+    SET BRFSSImp.Data;
+    /* Convert age_char from character to numeric */
+    dispcode_num = INPUT(dispcode, 8.);  /* 8. is the width format */
+    DROP dispcode;                  /* Optionally drop the original character variable */
+    RENAME dispcode_num = dispcode;      /* Rename the numeric variable to the original name */
+RUN;
+
+* Now that this is complete, let's add value labels to all of our variables;
+
+PROC FORMAT;
+    VALUE state
+        6 = 'California'
+        8 = 'Colorado'
+        9 = 'Connecticut'
+        10 = 'Delaware'
+        35 = 'New Mexico'
+        37 = 'North Carolina'
+        54 = 'West Virginia';
+    VALUE imonth
+    	1 = 'January'
+    	2 = 'February'
+    	3 = 'March'
+    	4 = 'April'
+    	5 = 'May'
+    	6 = 'June'
+    	7 = 'July'
+    	8 = 'August'
+    	9 = 'September'
+    	10 = 'October'
+    	11 = 'November'
+    	12 = 'December';
+    VALUE dispcode
+    	1100 = 'Completed Interview'
+    	1200 = 'Partial Completed Interview';
+	RUN;
+
+  
+DATA BRFSSImp.Data;
+    SET BRFSSImp.Data;
+		FORMAT 
+			state state. 
+			imonth imonth. 
+			dispcode dispcode.;
+		RUN;
+
+
+PROC PRINT DATA=BRFSSImp.Data (OBS=5);
+RUN;
+        
+ * Great, the data is flipped, transformed, and labelled. It will be stored in the BRFSSImp.DATA folder. 
+   This will also be the folder containing our final dataset.
+   
+ 
+ 
+
+*****************************************************************************************
+******************** S   E   C   T   I   O   N   1.1.2 **********************************
+*****************************************************************************************;       
+        
+   *Now let's move onto our demographics set;
+   
+PROC IMPORT
+DATAFILE="&CourseRoot/1_Source/demographics.xlsx"
+OUT = BRFSSImp.demographics
+REPLACE
+DBMS=XLSX;
+Run;
+
+ *Now I want to start by removing all of the unnecessary variables from the dataset;
+        
+DATA BRFSSIMP.demographics2;
+	SET BRFSSIMP.demographics;
+		DROP PERSDOC3 MEDCOST1 CHECKUP1 MARITAL EMPLOY1 TRNSGNDR _AGEG5YR;
+	RUN; 
+
+ *Now, that the dataset is reduced, let's start making the PIs variables:
+ 
+ 
+*******************************************************************	 
+ *Race/Ethnicity;
+******************************************************************;
+
+ 
+DATA BRFSSIMP.demographics2;
+    SET BRFSSIMP.demographics;
+    
+    *Create the placeholder variable;
+    RaceEth = .;
+    
+    /* Create a new categorical variable based on conditions */
+   
+    IF _PRACE2 = 1 AND _HISPANC = 2 THEN RaceEth = 1;
+    ELSE IF _PRACE2 = 2 AND _HISPANC = 2 THEN RaceEth = 2;
+    ELSE IF _PRACE2 = 3 AND _HISPANC = 2 THEN RaceEth = 3;
+    ELSE IF _HISPANC = 1 THEN RaceEth = 4;
+    ELSE RaceEth = 5;
+RUN;
+
+	*Now let's set labels for this;
+        
+	PROC FORMAT;
+	    VALUE RaceEth
+	        1 = 'Non-Hispanic White'
+	        2 = 'Non-Hispanic Black'
+	        3 = 'Non-Hispanic American Indian or Alaska Native'
+	        4 = 'Hispanic'
+	        5 = 'Other';
+	RUN;	
+	
+		DATA BRFSSImp.demographics2;
+	    	SET BRFSSImp.demographics2;
+				FORMAT 
+					RaceEth RaceEth.;
+			RUN;
+	        
+*******************************************************************	        
+	*Insurance;
+******************************************************************;
+
+
+DATA BRFSSIMP.demographics2;
+    SET BRFSSIMP.demographics2;
+    
+    *Create the placeholder variable;
+    Insurance = .;
+    
+    /* Create a new categorical variable based on conditions */
+   
+    IF PRIMINSR <= 4 THEN Insurance = 1;
+    ELSE IF PRIMINSR > 4 AND PRIMINSR <= 6 THEN Insurance = 2;
+    ELSE IF PRIMINSR = 7 THEN Insurance = 3;
+    ELSE IF PRIMINSR = 8 THEN Insurance = 4;
+    ELSE IF PRIMINSR = 9 AND PRIMINSR <= 10 THEN Insurance = 5;
+    ELSE Insurance = 6;
+RUN; 
+
+*Now let's set labels for this;
+        
+	PROC FORMAT;
+	    VALUE Insurance
+	        1 = 'Private/Commercial/Medicare/Medigap'
+	        2 = 'Medicaid/CHIP'
+	        3 = 'Tricare'
+	        4 = 'Indian Health Services'
+	        5 = 'Other'
+	        6 = 'None/Unknown/Uninsured';
+	RUN;	
+	
+		DATA BRFSSImp.demographics2;
+	    	SET BRFSSImp.demographics2;
+				FORMAT 
+					Insurance Insurance.;
+			RUN;
+
+*******************************************************************	
+	*Now let's move on to Education;
+******************************************************************;
+	
+DATA BRFSSIMP.demographics2;
+    SET BRFSSIMP.demographics2;
+    
+    *Create the placeholder variable;
+    Education = .;
+    
+    /* Create a new categorical variable based on conditions */
+   
+    IF EDUCA < 4 THEN Education = 1;
+    ELSE IF EDUCA = 4 THEN Education = 2;
+    ELSE IF EDUCA > 4 AND EDUCA < 6 THEN Education = 3;
+    ELSE Education = 4;
+RUN; 
+
+*Now let's set labels for this;
+        
+	PROC FORMAT;
+	    VALUE Education
+	        1 = '<High School'
+	        2 = 'Graduated High School'
+	        3 = 'Some College'
+	        4 = '4+ Year Degree';
+	RUN;	
+	
+		DATA BRFSSImp.demographics2;
+	    	SET BRFSSImp.demographics2;
+				FORMAT 
+					Education Education.;
+			RUN;
+
+*******************************************************************				
+	*Now let's move on to Age category;
+******************************************************************;
+	
+DATA BRFSSIMP.demographics2;
+    SET BRFSSIMP.demographics2;
+    
+    *Create the placeholder variable;
+    AgeCat = .;
+    
+    /* Create a new categorical variable based on conditions */
+   
+    IF _AGEG5YR <= 5 THEN AgeCat = 1;
+    ELSE IF _AGEG5YR > 5 AND _AGEG5YR <= 9 THEN AgeCat = 2;
+    ELSE AgeCat = 3;
+RUN; 	
+	
+	*Now let's set labels for this;
+        
+	PROC FORMAT;
+	    VALUE AgeCat
+	        1 = '18-44'
+	        2 = '45-64'
+	        3 = '65+';
+	RUN;	
+	
+		DATA BRFSSImp.demographics2;
+	    	SET BRFSSImp.demographics2;
+				FORMAT 
+					AgeCat AgeCat.;
+			RUN;
+			
+*******************************************************************				
+	*Now we move on to Income;
+******************************************************************;	
+	
+DATA BRFSSIMP.demographics2;
+    SET BRFSSIMP.demographics2;
+    
+    *Create the placeholder variable;
+    Income = .;
+    
+    /* Create a new categorical variable based on conditions */
+   
+    IF INCOME3 <= 2 THEN Income = 1;
+    ELSE IF INCOME3 > 2 AND INCOME3 <= 5 THEN Income = 2;
+    ELSE IF INCOME3 = 6 THEN Income = 3;
+    ELSE IF INCOME3 > 6 AND INCOME3 <= 8 THEN Income = 4;
+    ELSE IF INCOME3 > 8 AND PRIMINSR <= 10 THEN Income = 5;
+    ELSE Income = 6;
+RUN; 
+
+	*Now let's add labels;
+	
+	PROC FORMAT;
+	    VALUE Income
+	        1 = '<15k'
+	        2 = '15k - <35k'
+	        3 = '35k - <50k'
+	        4 = '50k - <100k'
+	        5 = '100k - <200k'
+	        6 = '200k+';
+	RUN;	
+	
+		DATA BRFSSImp.demographics2;
+	    	SET BRFSSImp.demographics2;
+				FORMAT 
+					Income Income.;
+			RUN;
+			
+*******************************************************************			
+	*Finally, let's complete total number of disabilities;
+******************************************************************;	
+DATA BRFSSIMP.demographics2;
+    SET BRFSSIMP.demographics2;
+    
+    *Create the placeholder variable. This time, it will be the sum of all the disabilities.;
+    TotDis = (DEAF = 1) + (Blind = 1) + (DECIDE = 1) + (DIFFWALK = 1) + (DIFFDRES = 1) + (DIFFALON = 1);
+RUN; 	
+
+
+
+*****************************************************************************************
+******************** S   E   C   T   I   O   N   1.1.3 **********************************
+*****************************************************************************************;   
+
+
+
+
+	*We'll be focusing on our Outcomes dataset for this portion. We'll begin by importing the data;
+	
+PROC IMPORT
+DATAFILE="&CourseRoot/1_Source/outcomes.csv"
+OUT = BRFSSImp.outcomes
+REPLACE
+DBMS=CSV;
+Run;
+
+	*Now that it's imported, let's begin by creating the PIs variables;
+	
+*******************************************************************			
+	Chronic Heart Disease or Heart Attack;
+******************************************************************;	
+
+DATA BRFSSImp.outcomes;
+	SET BRFSSImp.outcomes;
+	
+	*Create the placeholder variable;
+    CHDorHA = .;
+    
+    /* Create a new categorical variable based on conditions */
+	
+	IF CVDCRHD4 = 1 OR CVDINFR4 = 1 THEN CHDorHA = 1;
+	ELSE IF CVDCRHD4 = 2 AND CVDINFR4 = 2 THEN CHDorHA = 2;
+	ELSE CHDorHA = 3;
+RUN;
+
+	*Now let's add labels;
+		
+		PROC FORMAT;
+		    VALUE CHDorHA
+		        1 = 'Has had CHD or HA'
+		        2 = 'No CHD or HA'
+		        3 = 'Not asked or Missing';
+		RUN;	
+		
+			DATA BRFSSImp.outcomes;
+		    	SET BRFSSImp.outcomes;
+					FORMAT 
+						CHDorHA CHDorHA.;
+				RUN;
+
+
+*******************************************************************			
+	Asthma Status                                                 
+******************************************************************;	
+
+*We have past asthma and current asthma variables. These need to be merged into 1;
+
+DATA BRFSSImp.outcomes;
+	SET BRFSSImp.outcomes;
+	
+	*Create the placeholder variable;
+    Asthma = .;
+    
+    /* Create a new categorical variable based on conditions */
+	
+	IF ASTHNOW = 1 THEN Asthma = 1;
+	ELSE IF ASTHNOW = 2 AND ASTHMA3 = 1 THEN Asthma = 2;
+	ELSE IF ASTHNOW = 2 AND ASTHMA3 = 2 THEN Asthma = 3;
+	ELSE Asthma = 4;
+RUN;
+
+	*Now let's add labels;
+		
+		PROC FORMAT;
+		    VALUE Asthma
+		        1 = 'Current Asthma'
+		        2 = 'Former Asthma'
+		        3 = 'Never Asthma'
+		        4 = 'Not sure';
+		RUN;	
+		
+			DATA BRFSSImp.outcomes;
+		    	SET BRFSSImp.outcomes;
+					FORMAT 
+						Asthma Asthma.;
+				RUN;
+				
+*******************************************************************			
+	BMI                                                 
+******************************************************************;
+
+*This variable is strange, as the height variable is combined (i.e. five foot 3 is coded as 503).
+*We will need to transform this variable to be just height in inches before moving forward;
+
+
+	*First, we need to remove the codes for missing or refused;
+DATA BRFSSImp.outcomes;
+    SET BRFSSImp.outcomes;
+
+    * Mark the value 7777 as missing;
+    IF HEIGHT3 = 7777 OR HEIGHT3 = 9999 THEN HEIGHT3 = .; /* Using a dot to denote a missing value in SAS */
+    IF WEIGHT2 = 7777 OR WEIGHT2 = 9999 THEN WEIGHT2 = .;
+
+RUN;
+
+	*There is an option for subjects to say they height and weight in kilos or centimeters(denoted with an 9);
+	*This will need to be converted to lbs;
+	
+DATA BRFSSImp.outcomes;
+    SET BRFSSImp.outcomes;
+
+    *Initialize the new weight variable;
+    weight_in_pounds = .;
+
+     *Check if the weight variable indicates kilograms;
+    IF SUBSTR(WEIGHT2, 1, 1) = '9' THEN DO;
+        *Convert kilograms to pounds;
+        kg_value = INPUT(SUBSTR(WEIGHT2, 2), 8.); /* Extract the kilograms part */
+        weight_in_pounds = kg_value * 2.20462;      /* Convert to pounds */
+    END;
+    ELSE DO;
+        *If it's already in pounds, assign it directly;
+        weight_in_pounds = WEIGHT2;
+    END;
+
+    *Drop the intermediate variable if desired;
+    DROP kg_value;
+RUN;
+
+	*We will need to do the same thing but with Height. The subject can request to say their height in CM;
+	
+	
+DATA BRFSSImp.outcomes;
+    SET BRFSSImp.outcomes;
+
+    *Initialize the new height variable;
+    height_in_inches = .;
+
+    *Check if the height variable indicates centimeters;
+    IF SUBSTR(HEIGHT3, 1, 1) = '9' THEN DO;
+        *Extract the centimeters part;
+        cm_value = INPUT(SUBSTR(HEIGHT3, 2), 8.); * Get the value without the leading 9;
+        height_in_inches = cm_value * 0.393701;     * Convert centimeters to inches;
+    END;
+    ELSE DO;
+        * Extract feet and inches;
+        feet = FLOOR(HEIGHT3 / 100);             *Extract feet part;
+        inches = MOD(HEIGHT3, 100);               *Extract inches part;
+        height_in_inches = (feet * 12) + inches;    *Convert to total inches;
+    END;
+
+    DROP cm_value feet inches;
+RUN;
+	
+	*Now that this is done, let's compute BMI from our new variables;
+	
+DATA BRFSSImp.outcomes;
+    SET BRFSSImp.outcomes;
+
+
+    IF height_in_inches > 0 THEN do; 
+        BMI = (weight_in_pounds / (height_in_inches**2)) * 703;
+    END;
+    ELSE BMI = .; 
+
+RUN;
+
+
+*******************************************************************			
+	BMI CATEGORIES                                              
+******************************************************************;
+
+	*Our focus now is separating our new BMI variable into a categorical variable;
+	
+DATA BRFSSImp.outcomes;
+    SET BRFSSImp.outcomes;
+    
+    *Set the placeholder variable;
+    BMICat = .;
+    
+    IF BMI = . THEN BMICat = .;
+    ELSE IF BMI < 18.5 THEN BMICat = 1;
+    ElSE IF BMI >= 18.5 AND BMI < 25.0 THEN BMICat = 2;
+    ELSE IF BMI >= 25.0 AND BMI <30.0 THEN BMICat = 3;
+    ELSE BMICat = 4;
+RUN;
+
+	*Now let's add labels;
+		
+		PROC FORMAT;
+		    VALUE BMICat
+		        1 = 'Underweight'
+		        2 = 'Normal Weight'
+		        3 = 'Overweight'
+		        4 = 'Obese';
+		RUN;	
+		
+			DATA BRFSSImp.outcomes;
+		    	SET BRFSSImp.outcomes;
+					FORMAT 
+						BMICat BMICat.;
+				RUN;
+
+
+*******************************************************************			
+	COVID Positive                                             
+******************************************************************;
+
+*Now we need a single reduced categorical variable for covid testing;
+
+DATA BRFSSImp.outcomes;
+    SET BRFSSImp.outcomes;
+    
+    *Set the placeholder variable;
+    COVIDTest = .;
+    
+    IF COVIDPOS = 1 OR COVIDPOS = 3 THEN COVIDTest = 1;
+    ElSE IF COVIDPOS = 2 THEN COVIDTest = 2;
+    ELSE IF COVIDPOS = 7 OR COVIDPOS = 9 THEN COVIDTest = 3;
+    ELSE COVIDTEST = 3;
+RUN;
+
+	*Now let's add labels;
+		
+		PROC FORMAT;
+		    VALUE COVIDTest
+		        1 = 'Yes (Any Test Type)'
+		        2 = 'No'
+		        3 = 'Unknown/Refused/Missing';		        
+		RUN;	
+		
+			DATA BRFSSImp.outcomes;
+		    	SET BRFSSImp.outcomes;
+					FORMAT 
+						COVIDTest COVIDTest.;
+				RUN;
+				
+
+*******************************************************************			
+	CANCER Status                                             
+******************************************************************;
+
+	*The PI wants to know if they have ever had cancer. We will use the age at cancer variable for this;
+
+DATA BRFSSImp.outcomes;
+    SET BRFSSImp.outcomes;
+    
+    *Set the placeholder variable;
+    Cancer = .;
+    
+    IF CNCRAGE = . THEN Cancer = 0;
+    ELSE Cancer = 1;
+RUN;
+
+	*Now let's add labels;
+		
+		PROC FORMAT;
+		    VALUE Cancer
+		        1 = 'Yes'
+		        0 = 'No';	        
+		RUN;	
+		
+			DATA BRFSSImp.outcomes;
+		    	SET BRFSSImp.outcomes;
+					FORMAT 
+						Cancer Cancer.;
+				RUN;
+				
+*******************************************************************			
+	Age Cat of First Cancer Dx                                             
+******************************************************************;
+
+*Now we will create a category for the ages of first cancer dx rather than a binary yes or no;
+
+DATA BRFSSImp.outcomes;
+    SET BRFSSImp.outcomes;
+    
+    *Set the placeholder variable;
+    CancerFirst = .;
+    
+    IF CNCRAGE = . THEN CancerFirst = .;
+    ELSE IF CNCRAGE > 0 AND COVIDPOS < 15 THEN CancerFirst = 1;
+    ElSE IF CNCRAGE >= 15 AND CNCRAGE < 18 THEN CancerFirst = 2;
+    ELSE IF CNCRAGE >= 18 AND CNCRAGE < 39 THEN CancerFirst = 3;
+    ELSE CancerFirst = 4;
+RUN;
+
+	*Now let's add labels;
+		
+		PROC FORMAT;
+		    VALUE CancerFirst
+		        1 = '0 - <15'
+		        2 = '15 - <18'
+		        3 = '18 - <39'
+		        4 = '40+';		        
+		RUN;	
+		
+			DATA BRFSSImp.outcomes;
+		    	SET BRFSSImp.outcomes;
+					FORMAT 
+						CancerFirst CancerFirst.;
+				RUN;
+
+
+
+
+
+*****************************************************************************************
+******************** S   E   C   T   I   O   N   1.1.4 **********************************
+*****************************************************************************************;  
+
+
+
+	*We'll be focusing on our Risk Factors dataset for this portion. We'll begin by importing the data;
+	
+PROC IMPORT
+DATAFILE="&CourseRoot/1_Source/riskfactors.xlsx"
+OUT = BRFSSImp.riskfactors
+REPLACE
+DBMS=xlsx;
+Run;
+
+				
+*******************************************************************			
+	Pct Days Physical Health not good                                             
+******************************************************************;
+
+*The PI wants to know what percentage of days in the last 30 were bad physical health days;
+
+
+DATA BRFSSImp.riskfactors;
+    SET BRFSSImp.riskfactors;
+    
+    *Set the placeholder variable;
+    PhysBad = .;
+    
+    IF PHYSHLTH = 88 THEN PhysBad = 0;
+    ELSE IF PHYSHLTH > 1 AND PHYSHLTH <= 30 THEN PhysBad = (PHYSHLTH / 30) * 100;
+    ELSE PhysBad = .;
+RUN;
+
+
+*******************************************************************			
+	Pct Days Mental Health not good                                             
+******************************************************************;
+
+*The PI wants to know what percentage of days in the last 30 were bad mental health days;
+
+
+DATA BRFSSImp.riskfactors;
+    SET BRFSSImp.riskfactors;
+    
+    *Set the placeholder variable;
+    MentBad = .;
+    
+    IF MENTHLTH = 88 THEN MentBad = 0;
+    ELSE IF MENTHLTH > 1 AND MENTHLTH <= 30 THEN MentBad = (MENTHLTH / 30) * 100;
+    ELSE MentBad = .;
+RUN;
+
+
+*******************************************************************			
+	Smoking Staus                                             
+******************************************************************;
+
+*The PI wants to classify individuals into smoking groups;
+
+
+*This will be tricky as we will need to classify our groups based on multiple variables;
+
+DATA BRFSSImp.riskfactors;
+    SET BRFSSImp.riskfactors;
+    
+    *Set the placeholder variable;
+    Smoker = .;
+    
+    *We start by categorizing the current smokers into the group;
+    IF SMOKEDAY2 < 3 AND SMOKE100 = 1 THEN Smoker = 2;
+    ELSE IF SMOKEDAY2 = 3 AND SMOKE100 = 1 THEN Smoker = 1;
+    ELSE IF SMOKE100 = 2 THEN Smoker = 0;
+    ELSE Smoker = .;
+RUN;
+
+	*	Now let's add value labels;
+	
+	PROC FORMAT;
+		    VALUE Smoker
+		        0 = 'Never Smoker'
+		        1 = 'Past Smoker'
+		        2 = 'Current Smoker';        
+		RUN;	
+		
+			DATA BRFSSImp.riskfactors;
+		    	SET BRFSSImp.riskfactors;
+					FORMAT 
+						Smoker Smoker.;
+				RUN;
+
+
+*******************************************************************			
+	Smoking Staus                                             
+******************************************************************;
+
+*The PI wants to know the number of years smoked;
+*We will need to use the LCSLAST and LCSFIRST variables. These have missing value numbers that need to change;
+
+DATA BRFSSImp.riskfactors;
+    SET BRFSSImp.riskfactors;
+    
+    IF LCSLAST > 100 THEN LCSLAST = .;
+RUN;
+
+*Let's do the same for LCSFIRST;
+
+DATA BRFSSImp.riskfactors;
+    SET BRFSSImp.riskfactors;
+    
+    IF LCSFIRST > 100 THEN LCSFIRST = .;
+RUN;
+
+*Now let's create our actual variable;
+
+DATA BRFSSImp.riskfactors;
+    SET BRFSSImp.riskfactors;
+    
+    *Set the placeholder variable;
+    SmokeYears = .;
+    
+    *We start by only using subjects that fit into our current or past smoker groups;
+    IF Smoker <= 2 AND Smoker > 0 THEN SmokeYears = (LCSLAST - LCSFIRST);
+    ELSE SmokeYears = .;
+RUN;
+
+
+*******************************************************************			
+	Number of packs per day;                                             
+******************************************************************;
+
+*The PI wants us to determine the number of packs per day.
+*The standard amount of cigarettes in a pack is 20;
+
+
+
+DATA BRFSSImp.riskfactors;
+    SET BRFSSImp.riskfactors;
+    
+    *Set the placeholder variable;
+    PacksPerDay = .;
+    
+    *We start by only using subjects that fit into our current or past smoker groups;
+    IF LCSNUMCG <= 300 AND LCSNUMCG > 0 THEN PacksPerDay = LCSNUMCG / 20;
+    ELSE SmokeYears = .;
+RUN;
+
+
+*******************************************************************			
+	Drank at least 1 Drink in last 30 days;                                            
+******************************************************************;
+
+*The PI wants a binary variable to capture current drinking via use in the last 30 days;
+
+DATA BRFSSImp.riskfactors;
+    SET BRFSSImp.riskfactors;
+    
+    *Set the placeholder variable;
+    Alc30 = .;
+    
+    *We start by only using subjects that fit into our current or past smoker groups;
+    IF ALCDAY4 <= 30 AND ALCDAY4 > 0 THEN Alc30 = 1;
+    ELSE IF ALCDAY4 = 888 THEN Alc30 = 0;
+    ELSE Alc30 = .;
+RUN;
+
+	*Now let's add labels;
+	
+	PROC FORMAT;
+		    VALUE Alc
+		        0 = 'No Alcohol'
+		        1 = 'Current Drinker';       
+		RUN;	
+		
+			DATA BRFSSImp.riskfactors;
+		    	SET BRFSSImp.riskfactors;
+					FORMAT 
+						Alc30 Alc.;
+				RUN;
+				
+
+*******************************************************************			
+	Time (in months) betwen covid vaccination;                                            
+******************************************************************;
+
+*The PI is interested in a variable that captures the time between the subjets 1st and second Covid vax;
+
+DATA BRFSSImp.riskfactors;
+    SET BRFSSImp.riskfactors;
+    
+*The values for this range to 12 2022 at the highest. All other number greater than this are for missing data.
+*Let's change everythign greater than 122022 to missing;
+	IF COVIDFS1 > 122022 THEN COVIDFS1 = .;
+RUN;
+
+*Then we will do the same for the second shot;
+
+
+DATA BRFSSImp.riskfactors;
+    SET BRFSSImp.riskfactors;
+    IF COVIDSE1 > 122022 THEN COVIDSE1 = .;
+
+*Now let's extract the months and create a difference variable;
+
+DATA BRFSSImp.riskfactors;
+    SET BRFSSImp.riskfactors;
+
+    * Extract month and year for each timepoint;
+    Month1 = INPUT(SUBSTR(PUT(COVIDFS1, 6.), 1, LENGTH(PUT(COVIDFS1, 6.)) - 4), BEST.); /* Extract month part */
+    Year1 = INPUT(SUBSTR(PUT(COVIDFS1, 6.), LENGTH(PUT(COVIDFS1, 6.)) - 3), BEST.);     /* Extract year part */
+    
+    Month2 = INPUT(SUBSTR(PUT(COVIDSE1, 6.), 1, LENGTH(PUT(COVIDSE1, 6.)) - 4), BEST.);
+    Year2 = INPUT(SUBSTR(PUT(COVIDSE1, 6.), LENGTH(PUT(COVIDSE1, 6.)) - 3), BEST.);
+
+    * Convert to SAS dates;
+    Date1 = MDY(Month1, 1, Year1);
+    Date2 = MDY(Month2, 1, Year2);
+
+    * Calculate difference in months;
+    MonthDifference = INTCK('MONTH', Date1, Date2);
+
+    DROP Month1 Year1 Month2 Year2 Date1 Date2; /* Optional: Drop intermediate variables */
+RUN;
+
+
+*******************************************************************			
+	Percent of Marijuana in last 30 days;                                            
+******************************************************************;
+
+*The Pi is interested in the percent of days the subject used cannabis in the last 30 days;
+
+DATA BRFSSImp.riskfactors;
+    SET BRFSSImp.riskfactors;
+    
+    *Set the placeholder variable;
+    Marijuana30= .;
+    
+    IF MARIJAN1 <= 30 AND MARIJAN1 > 0 THEN Marijuana30 = (MARIJAN1 / 30) * 100;
+    ELSE Marijuana30 = .;
+RUN;
+
+
+
+*******************************************************************			
+	Cannabis user;                                            
+******************************************************************;
+
+*Our final variable is determining if there is any cannabis use among the subject;
+
+DATA BRFSSImp.riskfactors;
+    SET BRFSSImp.riskfactors;
+    
+    *Set the placeholder variable;
+    MariCurrent= .;
+    
+    IF MARIJAN1 > 0 AND MARIJAN1 <= 30 THEN MariCurrent = 1;
+    ELSE IF MARJSMOK = 1 THEN MariCurrent = 1;
+    ELSE IF MARJEAT = 1 THEN MariCurrent = 1;
+    ELSE IF MARJVAPE = 1 THEN MariCurrent = 1;
+    ELSE IF MARJDAB = 1 THEN MariCurrent = 1;
+    ELSE IF MARJOTHER = 1 THEN MariCurrent = 1;
+    ELSE MariCurrent = 0;
+RUN;
+
+	*Now let's add labels;
+	
+	PROC FORMAT;
+		    VALUE Marijuana
+		        0 = 'No Marijuana'
+		        1 = 'Current Marijuana';       
+		RUN;	
+		
+			DATA BRFSSImp.riskfactors;
+		    	SET BRFSSImp.riskfactors;
+					FORMAT 
+						MariCurrent Marijuana.;
+				RUN;
+
+
+
+*****************************************************************************************
+******************** S   E   C   T   I   O   N   1.1.5 **********************************
+*****************************************************************************************;  
+
+*Now we have code for everythign, it's time to merge the datasets together and make this;
+
+
+
+*******************************************************************			
+	Risk Factors                                            
+******************************************************************;
+
+*Unlike the previous datasets, Risk Factors will be merged based on the ID variable;
+*Both variables are already characters, so let's sort the data first;
+
+
+PROC SORT DATA=BRFSSImp.data;
+    BY id;  * Sort the first dataset by seqno;
+RUN;
+
+
+PROC SORT DATA=BRFSSImp.riskfactors;
+    BY id;  * Sort the second dataset by seqno;
+RUN;
+
+
+*Now let's merge the datasets;
+
+DATA BRFSSImp.data;
+    MERGE BRFSSImp.data (IN=a) BRFSSImp.riskfactors (IN=b);
+    BY id;
+    IF a AND b;  * Keep only matching records;
+RUN;
+
+*******************************************************************			
+	Demographics                                            
+******************************************************************;
+
+*Let's start 1 dataset at a time. To begin, we will start by merging the Reference Table and the Demographics;
+
+*These two will be merged based on SEQNO. However, the SEQNO has hypthens in Demo. We need to remove them;
+
+DATA BRFSSImp.demographics2;
+    SET BRFSSImp.demographics2;
+
+    * Remove hyphens from the variable;
+    seqno = COMPRESS(seqno, '-');
+RUN;
+
+*It also seems that our SEQNO variables have difference lengths, let's make them uniform;
+
+
+
+*Now everything needs to be sorted be SEQNO;
+
+PROC SORT DATA=BRFSSImp.data;
+    BY seqno;  * Sort the first dataset by seqno;
+RUN;
+
+PROC SORT DATA=BRFSSImp.demographics2;
+    BY seqno;  * Sort the second dataset by seqno;
+RUN;
+
+
+*Now let's merge the datasets based on SEQNO;
+
+DATA BRFSSImp.data;
+    MERGE BRFSSImp.data (IN=a) BRFSSImp.demographics2 (IN=b);
+    BY seqno;
+    IF a AND b;  * Keep only matching records;
+RUN;
+
+*******************************************************************			
+	Outcomes                                            
+******************************************************************;
+
+*Outcomes will also be merged by seqno. However, seqno is numeric in outcomes. We need a character variable.;
+
+DATA BRFSSImp.outcomes;
+    SET BRFSSImp.outcomes;
+
+    LENGTH seqno_char $10;  * Specify the length for the new character variable;
+    
+    seqno_char = PUT(SEQNO, Z10.);  
+    DROP SEQNO;
+    RENAME seqno_char = seqno;
+RUN;
+
+
+
+*Now that that is completed, let's sort based on our new variable;
+
+PROC SORT DATA=BRFSSImp.data;
+    BY seqno;  * Sort the first dataset by seqno;
+RUN;
+
+
+PROC SORT DATA=BRFSSImp.outcomes;
+    BY seqno;  * Sort the second dataset by seqno;
+RUN;
+
+
+
+*Finally, let's merge this into the "data" libary;
+
+DATA BRFSSImp.data;
+    MERGE BRFSSImp.data (IN=a) BRFSSImp.outcomes (IN=b);
+    BY seqno;
+    IF a AND b;  * Keep only matching records;
+RUN;
+
+
+
+
+
+*************************************************************************************************************;
+
+
+
