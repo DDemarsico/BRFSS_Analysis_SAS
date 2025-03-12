@@ -1,0 +1,576 @@
+*****************************************************************************************
+*************   P   R   O   J   E  C  T   #   5       B   R   F   S   S   ***************
+*****************************************************************************************
+*                                                                                       *
+*   PROGRAM:    SAS Programs.sas                                                        *
+*   PURPOSE:    Create Combined Data Analysis Dataset                                   *
+*   AUTHOR:     Dominick DeMarsico                                                      *
+*   CREATED:    11-27-2024                                                              *
+*                                                                                       *
+*   COURSE:     BIOS 6680 - Data Management Using SAS                                   *
+*   DATA USED:  BRFSS Study_Fall2024 + Associated files                                 *
+*   SOFTWARE:   SAS Studio                                                              *
+*   MODIFIED:   DATE        BY  REASON                                                  *
+*               ----------  --- ------------------------------------------------------- *
+*               N/A  		N/A                                                         *
+*                                                                                       *
+*   CONTENTS:                                                                           *
+*   	Section 1 - Tables                                                              *
+*   	Section 2 - Figures                                                             *
+*       Section 3 - Review 
+*       Section 4 - ODS Report                                                          *
+*****************************************************************************************
+***********************************************************************************; RUN;
+
+
+
+ * For Project 5, we will be creating the tables and figures that were describes in our Data Analysis Plan
+   Our primary research questions are the following:
+ 	     1. What are the differences in BMI between California and North Carolina
+         2. What are the differences in substance use habits between California and North Carolina
+         
+   Let's begin now by creating all of the tables outlined in our plan
+   We'll start by setting our Courseroot and libraries;
+   
+%Let CourseRoot = /home/u63987727/BRFSS;
+LIBNAME BRFSSscr "&CourseRoot/1_Source";
+LIBNAME BRFSSImp "&CourseRoot/2_Import";
+
+
+
+* Additionally, let's create variable labels so that our tables and figures are easy to understand.
+  BMI will remain unchanged as there isn't a label that fits this better than their name;
+
+proc format;
+		value $varnames
+		'_Sex' = 'Sex'
+		'AgeCat' = 'Age Category'
+		'state' = 'State'
+		'PacksPerDay' = 'Packs of Cigarettes Smoked per Day'
+		'_NAME_' = 'Variable'
+		'Smoker' = 'Current Smoker';
+		run;
+   
+   
+*****************************************************************************************
+******************** S   E   C   T   I   O   N   1 **************************************
+*****************************************************************************************;
+         
+*********************************************************************         
+* Table 1a - Means and Standard Deviations of 2 Continuous Variables*
+*********************************************************************
+
+
+	For this table, we'll be comparing BMI and Packs per Day (Cigarettes) as our continous variables
+	
+	Additionally, we want to use ODS tracing to create datasets of tables. This will be used to
+	export our final report;
+
+*Step 1- Use ODS TRACE to identify name of Table;
+*Step 2- Use ODS OUTPUT to create a dataset;
+/*	ods trace on;*/
+
+		ods output Table=Table1_pre;
+		proc tabulate data=BRFSSImp.data;
+		var BMI PacksPerDay;
+		table BMI PacksPerday, mean*f=comma9.1 std*f=comma9.1/nocellmerge;
+		run;
+/*	ods trace off;*/
+
+*Step 3. Look at the datset;
+		proc print data=Table1_pre;
+		run;
+
+*Step 4. Clean the dataset with the output to look pretty;
+
+		data table1_pre2;
+		set table1_pre;
+		BMI=strip(put(BMI_mean,8.1))||" ("||strip(put(BMI_std,8.1))||")";
+		PacksPerDay=strip(put(PacksPerDay_mean,8.1))||" ("||strip(put(PacksPerDay_std,8.1))||")";
+		run;
+
+		proc print data=table1_pre2;
+		var BMI PacksPerDay;
+		run;
+
+*Step 5. Tranpose the data;
+		proc transpose data=table1_pre2 out=table1_clean(rename=(_name_=Variable Col1=MeanSD));
+		var BMI PacksPerDay;
+		run;
+		
+proc print data=table1_clean;
+run;
+		data table1_clean;
+		set table1_clean;
+		label variable="Variable" MeanSd="Mean(SD)";
+		format variable $varnames.;
+		run;
+
+		proc print data=table1_clean label  noobs;
+		run;
+
+
+
+******************************************************************
+* Table 1b - Frequency and Proportion of 2 Catergorical Variables*
+******************************************************************
+
+	For this table, we'll be comparing Sex and Age Category
+	However, both the _Sex and the AGeCat variable are not labled. 
+	Let's label them first;
+	
+	PROC FORMAT;
+	    VALUE _Sex
+	        1 = 'Male'
+	        2 = 'Female';
+	RUN;
+	
+		DATA BRFSSImp.data;
+	    	SET BRFSSImp.data;
+				FORMAT 
+					_Sex _Sex.;
+			RUN;
+				
+			
+PROC FORMAT;
+	    VALUE AgeCat
+	        1 = '18-44'
+	        2 = '45-64'
+	        3 = '65+';
+	RUN;	
+	
+		DATA BRFSSImp.data;
+	    	SET BRFSSImp.data;
+				FORMAT 
+					AgeCat AgeCat.;
+			RUN;
+
+
+*Step 1- Use ODS TRACE to identify name of Table;
+*Step 2- Use OUT to create a dataset;
+	ods trace on;
+ods output Table=Table1_pre;
+PROC FREQ	DATA = BRFSSImp.data;
+	TABLES	_Sex /	OUT = sex_freq;
+	RUN;
+
+PROC FREQ	DATA = BRFSSImp.data;
+	TABLES	AgeCat /	OUT = age_freq;
+RUN;
+	ods trace off;
+	
+	
+*Step 3- Look at the data;
+PROC PRINT DATA = sex_freq;
+	RUN;
+	
+PROC PRINT DATA = age_freq;
+RUN;
+
+DATA sex_freq;
+SET sex_freq;
+length Sex $10;
+IF _Sex=1 THEN Sex ="Male";
+ELSE IF _Sex=2 THEN Sex="Female";
+DROP _Sex;
+RUN;
+PROC PRINT DATA = sex_freq;
+	RUN;
+
+	
+DATA age_freq;
+SET age_freq;
+IF AgeCat=1 THEN Age_Category ="18-44";
+ELSE IF AgeCat=2 THEN Age_Category="45-64";
+ELSE IF AgeCat=3 THEN Age_Category="65+";
+DROP AgeCat;
+RUN;
+PROC PRINT DATA = age_freq;
+	RUN;
+
+*Step 4- Concatonate the data;
+DATA table1b_combine;
+SET sex_freq(rename=(Sex=Variable))
+    age_freq (rename=(Age_Category=Variable));
+n_percent=strip(put(count,8.))||" ("||strip(put(round(percent,0.1),8.1))||"%)";
+label n_percent="N(%)" Variable="Variable";
+DROP  count percent;
+RUN;
+PROC PRINT DATA = table1b_combine label noobs;
+	RUN;
+	
+	
+  *This looks good, but I would like to add a break so that it isn't one giant table;
+ 
+data enhanced_table;
+    set table1b_combine;
+
+    /* Create a new dataset with group headers */
+    if _n_ = 1 then do;
+        /* Insert "Sex" header as the first row */
+        Variable = "Sex";
+        output;
+    end;
+IF _n_ = 1 AND Variable = "Sex" THEN Variable = "Male"; /*Make it so the second value equals male */
+
+Output;
+
+    /* Insert "Age" header when transitioning to age rows */
+    if _n_ = 2 then do;
+        Variable = "Age";
+        n_Percent = "";
+        output;
+    end;
+run;
+ 
+PROC PRINT DATA = enhanced_table;
+RUN;
+
+* Finally, let's make sure the sex observation does not have any specific values;
+
+data enhanced_table1b;
+	Set enhanced_table;
+	
+	If _n_ = 1 THEN n_Percent = "";
+RUN;
+
+         
+***********************************************         
+* Table 2 - T-Test of Dependent vs Independent*
+***********************************************
+
+         
+         For this T-Test, we want to see if the Mean BMI (Dependent) differs significantly
+         between State (Independent)
+         However, since state is categorical, we will not be able to run a T-Test. Since the investigator's
+         primary interest is between California and North Carolina, let's create a new binary variable 
+         so we can run a T-Test;
+         
+DATA BRFSSIMP.Data;
+	SET BRFSSImp.data;
+	if state = 6 THEN State_Binary = 0;
+	ELSE IF state = 37 THEN State_Binary = 1;
+	ELSE State_Binary = .;
+RUN;
+         
+         
+         
+         
+         /* First let's set the value labels for ease of understanding */
+        
+        PROC FORMAT;
+    VALUE state_binary
+        0 = 'California'
+        1 = 'North_Carolina';
+        
+        
+        DATA BRFSSImp.Data;
+    SET BRFSSImp.Data;
+		FORMAT 
+			State_Binary state_binary.;
+		RUN;
+  
+  /* Now we can start to create the tables */
+
+
+*Step 1- Use ODS TRACE to identify name of Table;
+*Step 2- Use ODS OUTPUT to create a dataset;
+/*	ods trace on;*/
+	ods output Table=Table2_pre;
+	proc tabulate data=BRFSSImp.data missing;
+	class State_Binary;
+	var BMI;
+	table BMI,(State_Binary)*(mean*f=comma9.1 std*f=comma9.1)/nocellmerge;
+	run;
+/*	ods trace off;*/
+
+*Step 3- Look at the SAS table;
+	proc print data=Table2_pre;
+	run;
+
+*Step 4- Manipulate the SAS table to look the way I want;
+	data table2_pre;
+	set table2_pre;
+
+	array clean $22 BMI;
+	array means (*) BMI_Mean;
+	array sds (*) BMI_Std;
+
+		do i=1 to dim(clean);
+			clean(i)=strip(put(means(i),8.1))||" ("||strip(put(sds(i),8.1))||")";
+		end;
+
+	keep State_Binary BMI;
+	run;
+
+*Step 5- Check data;
+
+	proc print data=Table2_pre;
+	run;
+
+*Step 6- Transpose the data ;
+
+	proc transpose data=table2_pre out=cleantable2;
+	var BMI;
+	id State_Binary;
+	run;
+
+*Step 7- Check final data ;
+
+	proc print data=cleantable2;
+	run;
+
+*Step 8- Use ODS TRACE to identify name of Table;
+*Step 9- Use ODS OUTPUT to create a dataset;
+	ods trace on;
+	ods output TTests=ttest_results;
+	proc ttest data=BRFSSImp.data;
+	class State_Binary;
+	var BMI;
+	run;
+	ods trace off;
+
+*Step 10 Look at the SAS table;
+	proc print data=ttest_results;
+	run;
+	
+	
+*Step 11 Merge the tables;
+
+proc sql;
+	create table final_table2 as
+	select a._name_ label='Variable',a.North_Carolina label='North Carolina', 
+									a.California label='California',
+			b.Probt label='p-Value'
+	from cleantable2 a left join ttest_results(where=(variances='Unequal')) b
+	on a._name_=b.variable;
+	quit;
+
+	proc print data=final_Table2 noobs label;
+	run;
+
+	*Set our variable labels;
+
+		data final_table2;
+		set final_table2;
+		format _name_ $varnames.;
+		run;
+
+	proc print data=final_Table2 noobs label;
+	run;
+	
+
+
+
+
+**************************************************************************************************************;         
+* Table 3 - Relationship between X and Y
+		For this, we will be using a Linear Regression to determine the relationship
+		between Smoking habits and State. For our purposes, State will be a covariate and 
+		and PacksPerDay will be out outcome variable. 
+		
+		Additionally, California will be our reference;
+		
+*Let's start by finding the ODS name;		
+
+	ods trace on;	
+PROC GLM DATA=BRFSSIMP.data;
+    CLASS state (REF = 'California'); 
+    MODEL PacksPerDay = state / SOLUTION;
+RUN;
+	ods trace off;   
+	
+* ODS Name is 'ParameterEstimates';
+
+ods output  ParameterEstimates=table3_pre;
+PROC GLM DATA=BRFSSIMP.data;
+    CLASS state (REF = 'California'); 
+    MODEL PacksPerDay = state / SOLUTION;
+RUN;
+      
+      
+* Check the output;
+
+PROC PRINT Data = table3_pre;
+RUN;
+
+* I don't like how California has its own row even when it's set as the reference. Let's remove it;
+
+* Remove the reference category (California) from the output table;
+DATA table3_pre2;
+    SET table3_pre;
+    IF _N_ = 5 THEN DELETE; /* Delete the 5th observation */
+RUN;
+
+* View the cleaned table;
+PROC PRINT DATA=table3_pre2;
+RUN;
+
+* I also don't like how there is the word "state" before every state name. Let's get rid of that;
+
+DATA table3_pre3;
+    SET table3_pre2;
+    /* Remove the word "state " from the beginning */
+    IF Parameter ~= "Intercept" THEN Parameter = SUBSTR(Parameter, 9);
+    ELSE Parameter = "Intercept (California)";
+    DROP Biased Dependent;
+RUN;
+
+* View the cleaned table;
+PROC PRINT DATA=table3_pre3 noobs;
+RUN;
+      
+    * All states had significant results. California smoked 0.66 packs per day on average (20 cigarettes per pack).
+      With this as the reference:
+    
+      North Carolina smoked 0.17 more packs per day than California (p < .0001)
+      Colorado smoked 0.05 more packs per day than California (p < .0001)
+      West Virginia smoked 0.22 more packs per day than California (p < .0001);
+         
+
+* For the sake of answering the research question, I'll also run this regression using BMI as the 
+  primary outcome variable instead;
+         
+PROC GLM DATA=BRFSSIMP.data;
+	CLASS state (REF = 'California');
+	MODEL BMI = state / SOLUTION;
+RUN;
+
+*Only Colorado was significant: p < .0001;
+      
+      
+*****************************************************************************************
+******************** S   E   C   T   I   O   N   2 **************************************
+*****************************************************************************************;         
+         
+         
+* Figure 1 - Box Plot of Continuous Variable by Categorical Variable;
+
+* For this, we will be making BoxPlots using BMI as our Continuous variable and State as the categorical;
+
+
+Title 'Boxplot of BMI in each state';
+PROC SGPLOT DATA=BRFSSIMP.data;
+    VBOX BMI / GROUP=state  
+    						lineattrs=(color=black) 
+    						whiskerattrs=(color=black) 
+    						medianattrs=(color=black) 
+    						meanattrs=(color=black);
+	run;
+
+
+
+  
+* Figure 2 - Bar Chart of two Categorical Variables
+
+* For this, we will be making a Bar Chart using Smoking Status and State as our Categorical variables;
+
+   PROC FORMAT;
+    VALUE Smoker
+        2 = 'Current Smoker'
+        0 = 'Never Smoker';
+        
+        
+        DATA BRFSSImp.Data;
+    SET BRFSSImp.Data;
+		FORMAT 
+			Smoker smoker.;
+		RUN;
+
+Title 'Bar Chart of Smoking Status in each state';
+PROC SGPLOT DATA=BRFSSImp.data;
+	VBAR state / GROUP = Smoker 
+                             outlineattrs=(color=black thickness=2);
+	RUN;
+   
+
+*****************************************************************************************
+******************** S   E   C   T   I   O   N   3 **************************************
+*****************************************************************************************; 
+
+* As a quick review: let's start by adressing the research questions:
+
+	The PI was interested in determining the differences in BMI between California and North Carolina.
+	We ran an T-test to determine the if the mean BMI was significantly different between only California
+	and North Carolina. A p-value of .3448 shows that there is not a significant difference between the BMI
+	in these states.
+	
+	I also wanted to control for other states, so we ran a Linear Regression for the relationship between BMI 
+	and state. What we found was that the average BMI in California was ~27. However, individuals that live in 
+	North Carolina had, on average, a .16 higher BMI than those living in California when controlling for other
+	states (p < .0001).Therefore, we can conclusively say that when controlling for the average BMI in other states,
+	individuals living in California have an average BMI that is .16 times lower than individuals living in
+	North Carolina.
+	
+	
+	Our secondary question was asking if there were differences in substance use habits between states. As this
+	was one of my questions, I decided to move directly to the linear regression. In this scenario, I used 
+	PacksPerDay as my metric for substance use habits. The model showed that every  state was significantly different
+	(p < .0001). For the sake of keeping this question in line with the PI, California smokes 0.66 packs of cigarettes 
+	a day among current smoker and North Carolina smokes 0.17 more on average when controlling for other states. 
+	Therefore, we can conclude that cigarette use is signifcantly higher in North Carolina than it is in California (p<.0001).
+	
+	
+*****************************************************************************************
+Section 4
+*****************************************************************************************;
+ods pdf file="/home/u63987727/BRFSS/Documents/DeMarsico Project 5 Report.pdf" style=journal;
+ods startpage=no;
+title font=arial justify=left 'Project 5. BRFSS Study';
+title2 font=arial justify=left 'Investigator: Samantha Roberts';
+title3 font=arial justify=left 'Analyst: Dominick DeMarsico';
+title4 font=arial justify=left "&Sysdate";
+
+
+
+	title5 font=arial justify=left "Table 1a - Means and Standard Deviations of BMI and Packs of Cigarettes per Day";
+	proc print data=table1_clean label  noobs;
+	run;
+	title5;
+	
+	ods startpage=yes; 
+
+	title font=arial justify=left "Table 1b - Frequency and Proportion of Sex and Age Category";
+	proc print data=enhanced_table1b label  noobs;
+	run;
+
+	ods startpage=yes; 
+	
+title;
+	title font=arial justify=left "Table 2 - T-Test of Dependent (BMI) vs Independent (State of Residence)";
+	proc print data=final_table2 noobs label;
+	run;
+	
+	ods startpage=yes; 
+	
+title;
+	title font=arial justify=left "Table 3 - Linear relationship between BMI and State of Residence";
+	proc  print data=table3_pre3 noobs label split='/';
+	run;
+
+ods startpage=yes; 
+
+
+Title Figure1;
+Title2 'Boxplot of BMI in each state';
+PROC SGPLOT DATA=BRFSSIMP.data;
+    VBOX BMI / GROUP=state  
+    						lineattrs=(color=black) 
+    						whiskerattrs=(color=black) 
+    						medianattrs=(color=black) 
+    						meanattrs=(color=black);
+	run;
+
+ods startpage=yes;       
+
+Title Figure2;
+Title2 'Bar Chart of Smoking Status in Each State';
+PROC SGPLOT DATA=BRFSSImp.data;
+	VBAR state / GROUP = Smoker 
+                             outlineattrs=(color=black thickness=2);
+	RUN;
+	
+ods pdf close;
+	
+	
+	
